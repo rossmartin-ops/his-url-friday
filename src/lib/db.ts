@@ -1,6 +1,7 @@
 import { Pool, neonConfig } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-serverless';
 import ws from 'ws';
+import * as schema from '@/db/schema';
 
 // During build time, DATABASE_URL might not be available
 // We'll create a placeholder connection that will fail at runtime if used without proper env
@@ -18,7 +19,7 @@ neonConfig.webSocketConstructor = ws;
 const pool = new Pool({ connectionString: databaseUrl });
 
 // Create Drizzle instance with serverless adapter (supports transactions)
-export const db = drizzle({ client: pool });
+export const db = drizzle({ client: pool, schema });
 
 // Export the pool for advanced use cases
 export { pool };
