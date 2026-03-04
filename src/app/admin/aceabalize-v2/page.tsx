@@ -379,13 +379,12 @@ export default function AceabalizeV2Page() {
         </div>
       </div>
 
-      {/* Pipeline progress */}
-      {(pipelineRunning || pipelineDone || Object.keys(pipelineStatuses).length > 0) && (
-        <div className="rounded-xl border border-border bg-background overflow-hidden">
+      {/* Pipeline progress — always visible */}
+      <div className="rounded-xl border border-border bg-background overflow-hidden">
           <div className="px-6 py-4 border-b border-border">
             <h2 className="text-sm font-semibold flex items-center gap-2">
               <span className="w-1 h-5 bg-[#12BDCD] rounded-full" />
-              Pipeline Progress
+              Pipeline Phases
             </h2>
           </div>
           <div className="px-6 py-4 space-y-4">
@@ -393,7 +392,12 @@ export default function AceabalizeV2Page() {
               {PIPELINE_PHASES.map((phase, i) => {
                 const status = pipelineStatuses[phase] ?? 'pending';
                 return (
-                  <div key={phase} className="rounded-lg border border-border p-3 text-center">
+                  <div key={phase} className={`rounded-lg border p-3 text-center transition-colors ${
+                    status === 'done' ? 'border-green-300 bg-green-50/40' :
+                    status === 'running' ? 'border-blue-300 bg-blue-50/40' :
+                    status === 'error' ? 'border-red-300 bg-red-50/40' :
+                    'border-border'
+                  }`}>
                     <p className="text-xs text-muted-foreground font-medium">{i + 1}. {PHASE_LABELS[phase]}</p>
                     <p className={`text-sm font-semibold mt-1 ${statusColor(status)}`}>{status}</p>
                   </div>
@@ -430,7 +434,7 @@ export default function AceabalizeV2Page() {
             )}
           </div>
         </div>
-      )}
+
     </div>
   );
 }
