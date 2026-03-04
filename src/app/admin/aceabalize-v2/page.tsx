@@ -229,6 +229,78 @@ function PromptEditorModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ── Intermediate artifacts viewer ─────────────────────────────────────────
+
+const INTERMEDIATE_ARTIFACTS = [
+  { key: 'processed_md', label: 'Processed' },
+  { key: 'enhanced_md', label: 'Enhanced' },
+  { key: 'polished_md', label: 'Polished' },
+] as const;
+
+function IntermediateArtifacts({ sessionId, fileName }: { sessionId: string; fileName: string }) {
+  const [open, setOpen] = useState(false);
+  const [contents, setContents] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
+
+  async function loadArtifacts() {
+    if (Object.keys(contents).length > 0) { setOpen(true); return; }
+    setLoading(true);
+    setOpen(true);
+    const results = await Promise.all(
+      INTERMEDIATE_ARTIFACTS.map(async ({ key }) => {
+        const res = await fetch(`/api/aceabalize-v2/sessions/${sessionId}/artifacts/${key}`);
+        if (!res.ok) return { key, content: '' };
+        const data = (await res.json()) as { content: string | null };
+        return { key, content: data.content ?? '' };
+      })
+    );
+    const map: Record<string, string> = {};
+    results.forEach(({ key, content }) => { map[key] = content; });
+    setContents(map);
+    setLoading(false);
+  }
+
+  return (
+    <div className="rounded-lg border border-border overflow-hidden">
+      <button
+        onClick={() => { if (!open) void loadArtifacts(); else setOpen(false); }}
+        className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-muted-foreground hover:bg-muted/30 transition-colors"
+      >
+        <span>Intermediate outputs (Process → Enhance → Polish)</span>
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="border-t border-border px-4 py-3 space-y-4">
+          {loading && <p className="text-xs text-muted-foreground">Loading…</p>}
+          {INTERMEDIATE_ARTIFACTS.map(({ key, label }) => (
+            <div key={key} className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-muted-foreground">{label}</p>
+                {contents[key] && (
+                  <button
+                    onClick={() => downloadMarkdown(contents[key] ?? '', `${fileName || 'output'}-${label.toLowerCase()}`)}
+                    className="flex items-center gap-1 text-xs text-[#12BDCD] hover:underline"
+                  >
+                    <Download className="h-3 w-3" /> Download
+                  </button>
+                )}
+              </div>
+              <textarea
+                value={contents[key] ?? ''}
+                readOnly
+                rows={8}
+                placeholder={loading ? 'Loading…' : 'Not available'}
+                className="w-full border border-border rounded-md px-3 py-2 text-xs bg-muted font-mono resize-y"
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface JobStatus {
   jobId: string;
   sessionId: string;
@@ -722,6 +794,12 @@ export default function AceabalizeV2Page() {
                   readOnly
                   rows={24}
                   className="w-full border border-border rounded-lg px-3 py-2.5 text-sm bg-muted font-mono resize-y"
+                />
+
+                {/* Intermediate artifacts — collapsed by default */}
+                <IntermediateArtifacts
+                  sessionId={currentSessionId}
+                  fileName={uploadedFileName}
                 />
               </div>
             )}
