@@ -1,8 +1,233 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronDown, Download, FileUp, Settings, ClipboardCheck } from 'lucide-react';
+import { ChevronDown, Download, FileUp, Settings, ClipboardCheck, X, History, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+
+// ── Prompt editor types ────────────────────────────────────────────────────
+
+interface Prompt {
+  id: number;
+  slug: string;
+  name: string;
+  description: string | null;
+  activeVersion: number | null;
+  updatedAt: string;
+}
+
+interface PromptDetail extends Prompt {
+  content: string;
+}
+
+interface PromptVersion {
+  id: number;
+  version: number;
+  content: string;
+  changeNote: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  isArchived: boolean | null;
+}
+
+interface PromptsListResponse { prompts: Prompt[] }
+interface PromptDetailResponse { prompt: PromptDetail }
+interface PromptHistoryResponse { slug: string; versions: PromptVersion[] }
+
+// ── Prompt editor modal ────────────────────────────────────────────────────
+
+function PromptEditorModal({ onClose }: { onClose: () => void }) {
+  const [prompts, setPrompts] = useState<Prompt[]>([]);
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  const [promptDetail, setPromptDetail] = useState<PromptDetail | null>(null);
+  const [editedContent, setEditedContent] = useState('');
+  const [changeNote, setChangeNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<PromptVersion[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      const res = await fetch('/api/aceabalize-v2/prompts');
+      const data = (await res.json()) as PromptsListResponse;
+      setPrompts(data.prompts);
+      if (data.prompts[0]) void selectPrompt(data.prompts[0].slug);
+    })();
+   
+  }, []);
+
+  async function selectPrompt(slug: string) {
+    setSelectedSlug(slug);
+    setShowHistory(false);
+    setChangeNote('');
+    setSaveMsg('');
+    const res = await fetch(`/api/aceabalize-v2/prompts/${slug}`);
+    const data = (await res.json()) as PromptDetailResponse;
+    setPromptDetail(data.prompt);
+    setEditedContent(data.prompt.content);
+  }
+
+  async function handleSave() {
+    if (!selectedSlug || !changeNote.trim()) return;
+    setSaving(true);
+    setSaveMsg('');
+    try {
+      const res = await fetch(`/api/aceabalize-v2/prompts/${selectedSlug}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: editedContent, changeNote }),
+      });
+      if (!res.ok) throw new Error('Save failed');
+      setSaveMsg('Saved successfully');
+      setChangeNote('');
+      // Refresh the prompt detail and list
+      void selectPrompt(selectedSlug);
+      const listRes = await fetch('/api/aceabalize-v2/prompts');
+      const listData = (await listRes.json()) as PromptsListResponse;
+      setPrompts(listData.prompts);
+    } catch {
+      setSaveMsg('Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function loadHistory() {
+    if (!selectedSlug) return;
+    setLoadingHistory(true);
+    setShowHistory(true);
+    const res = await fetch(`/api/aceabalize-v2/prompts/${selectedSlug}/history`);
+    const data = (await res.json()) as PromptHistoryResponse;
+    setHistory(data.versions);
+    setLoadingHistory(false);
+  }
+
+  async function revertToVersion(version: number) {
+    if (!selectedSlug) return;
+    await fetch(`/api/aceabalize-v2/prompts/${selectedSlug}/revert/${String(version)}`, { method: 'POST' });
+    setShowHistory(false);
+    void selectPrompt(selectedSlug);
+  }
+
+  const isDirty = promptDetail && editedContent !== promptDetail.content;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-background rounded-xl border border-border w-full max-w-4xl h-[85vh] flex overflow-hidden shadow-xl">
+        {/* Sidebar */}
+        <div className="w-56 shrink-0 border-r border-border flex flex-col">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+            <span className="text-sm font-semibold">Prompts</span>
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto py-2">
+            {prompts.map((p) => (
+              <button
+                key={p.slug}
+                onClick={() => { void selectPrompt(p.slug); }}
+                className={`w-full text-left px-4 py-2.5 text-sm hover:bg-muted/50 transition-colors ${
+                  selectedSlug === p.slug ? 'bg-[#12BDCD]/10 border-l-2 border-l-[#12BDCD] font-medium' : ''
+                }`}
+              >
+                <p className="truncate">{p.name}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">v{p.activeVersion ?? 1}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Editor */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {promptDetail ? (
+            <>
+              <div className="px-5 py-3 border-b border-border flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-sm truncate">{promptDetail.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{promptDetail.description}</p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => { void loadHistory(); }}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border rounded px-2 py-1"
+                  >
+                    <History className="h-3 w-3" /> History
+                  </button>
+                </div>
+              </div>
+
+              {showHistory ? (
+                <div className="flex-1 overflow-y-auto p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold">Version History</p>
+                    <button onClick={() => setShowHistory(false)} className="text-xs text-[#12BDCD] hover:underline">
+                      ← Back to editor
+                    </button>
+                  </div>
+                  {loadingHistory && <p className="text-sm text-muted-foreground">Loading…</p>}
+                  {history.map((v) => (
+                    <div key={v.id} className="rounded-lg border border-border p-3 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold">v{v.version}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-muted-foreground">{new Date(v.createdAt).toLocaleDateString()}</span>
+                          <button
+                            onClick={() => { void revertToVersion(v.version); }}
+                            className="text-xs text-[#12BDCD] hover:underline"
+                          >
+                            Revert
+                          </button>
+                        </div>
+                      </div>
+                      {v.changeNote && <p className="text-xs text-muted-foreground">{v.changeNote}</p>}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <>
+                  <div className="flex-1 p-5 flex flex-col gap-3 min-h-0">
+                    <textarea
+                      value={editedContent}
+                      onChange={(e) => setEditedContent(e.target.value)}
+                      className="flex-1 border border-border rounded-lg px-3 py-2 text-sm font-mono bg-background resize-none focus:outline-none focus:ring-1 focus:ring-[#12BDCD]"
+                    />
+                  </div>
+
+                  {isDirty && (
+                    <div className="px-5 py-3 border-t border-border flex gap-3 items-center">
+                      <input
+                        type="text"
+                        placeholder="Change note (required to save)…"
+                        value={changeNote}
+                        onChange={(e) => setChangeNote(e.target.value)}
+                        className="flex-1 border border-border rounded-md px-3 py-1.5 text-sm bg-background"
+                      />
+                      <button
+                        onClick={() => { void handleSave(); }}
+                        disabled={saving || !changeNote.trim()}
+                        className="flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-[#12BDCD] text-white text-sm font-medium disabled:opacity-50 hover:bg-[#0fa8b8] transition-colors"
+                      >
+                        <Save className="h-3.5 w-3.5" />
+                        {saving ? 'Saving…' : 'Save'}
+                      </button>
+                      {saveMsg && <p className={`text-xs ${saveMsg.includes('fail') ? 'text-destructive' : 'text-green-600'}`}>{saveMsg}</p>}
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+              Select a prompt from the sidebar
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface JobStatus {
   jobId: string;
@@ -84,6 +309,7 @@ export default function AceabalizeV2Page() {
   const pipelinePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const router = useRouter();
 
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [aiReviewRunning, setAiReviewRunning] = useState(false);
   const [aiReviewDone, setAiReviewDone] = useState(false);
   const [aiReviewCount, setAiReviewCount] = useState(0);
@@ -263,13 +489,19 @@ export default function AceabalizeV2Page() {
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-4">
+      {settingsOpen && <PromptEditorModal onClose={() => setSettingsOpen(false)} />}
+
       {/* Header */}
       <div className="rounded-xl border-l-4 border-l-[#12BDCD] bg-background border border-border p-6">
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               Aceabalize V2
-              <button className="text-muted-foreground hover:text-foreground transition-colors">
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                title="Prompt editor"
+              >
                 <Settings className="h-5 w-5" />
               </button>
             </h1>
