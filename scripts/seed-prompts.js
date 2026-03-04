@@ -50,6 +50,12 @@ const PROMPTS = [
     description: 'Generates chapter intro with learning objectives and summary with key points',
     file: 'chapter_book_ends_prompt.txt',
   },
+  {
+    slug: 'ai_review',
+    name: 'AI Content Review',
+    description: 'Reviews aceabalized content for accuracy, regulatory compliance, and improvement opportunities',
+    file: 'perplexity_review_prompt.txt',
+  },
 ];
 
 async function main() {
@@ -80,7 +86,7 @@ async function main() {
     console.log(`✓ Seeded: ${prompt.slug} (${content.length} chars)`);
   }
 
-  console.log('\nAll 4 prompts seeded successfully.');
+  console.log('\nAll 5 prompts seeded successfully.');
   await pool.end();
 }
 

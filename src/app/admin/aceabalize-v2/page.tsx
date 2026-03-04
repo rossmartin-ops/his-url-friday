@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronDown, Download, FileUp, Settings } from 'lucide-react';
+import { ChevronDown, Download, FileUp, Settings, ClipboardCheck } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 interface JobStatus {
   jobId: string;
@@ -81,6 +82,11 @@ export default function AceabalizeV2Page() {
   const [error, setError] = useState('');
 
   const pipelinePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const router = useRouter();
+
+  const [aiReviewRunning, setAiReviewRunning] = useState(false);
+  const [aiReviewDone, setAiReviewDone] = useState(false);
+  const [aiReviewCount, setAiReviewCount] = useState(0);
 
   useEffect(() => {
     void fetchSessions();
@@ -231,6 +237,29 @@ export default function AceabalizeV2Page() {
   }
 
   const canRun = (uploadedContent.trim().length > 0) && !pipelineRunning;
+
+  async function handleRunAIReview() {
+    if (!currentSessionId) return;
+    setAiReviewRunning(true);
+    setAiReviewDone(false);
+    setError('');
+    try {
+      const res = await fetch(`/api/aceabalize-v2/sessions/${currentSessionId}/ai-review`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const err = (await res.json()) as { error: string };
+        throw new Error(err.error);
+      }
+      const data = (await res.json()) as { recommendationsGenerated: number };
+      setAiReviewCount(data.recommendationsGenerated);
+      setAiReviewDone(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'AI Review failed');
+    } finally {
+      setAiReviewRunning(false);
+    }
+  }
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-4">
@@ -406,7 +435,7 @@ export default function AceabalizeV2Page() {
             </div>
 
             {pipelineDone && pipelineOutput && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-semibold text-green-600">Pipeline complete</p>
                   <div className="flex gap-3">
@@ -424,6 +453,38 @@ export default function AceabalizeV2Page() {
                     </button>
                   </div>
                 </div>
+
+                {/* AI Review CTA */}
+                <div className="rounded-lg border border-amber-200 bg-amber-50/50 px-4 py-3 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium text-amber-900">Run AI Review</p>
+                    <p className="text-xs text-amber-700 mt-0.5">
+                      {aiReviewDone
+                        ? `${aiReviewCount} recommendation(s) generated — ready for Human Review`
+                        : 'Claude will review the content for accuracy and generate recommendations'}
+                    </p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    {aiReviewDone ? (
+                      <button
+                        onClick={() => router.push('/admin/human-review')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-green-600 text-white text-xs font-semibold hover:bg-green-700 transition-colors"
+                      >
+                        <ClipboardCheck className="h-3.5 w-3.5" /> Open Human Review
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => { void handleRunAIReview(); }}
+                        disabled={aiReviewRunning}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-amber-600 text-white text-xs font-semibold disabled:opacity-50 hover:bg-amber-700 transition-colors"
+                      >
+                        <ClipboardCheck className="h-3.5 w-3.5" />
+                        {aiReviewRunning ? 'Running review…' : 'Run AI Review'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
                 <textarea
                   value={pipelineOutput}
                   readOnly
